@@ -1,0 +1,128 @@
+### راهنمای کامل بیلد، اجرا و تست پروژه BitcoinMiner CUDA
+
+سلام! بر اساس پروژه‌ای که بازنویسی کردم، اینجا دستورات کامل و گام‌به‌گام برای **بیلد** (کامپایل)، **اجرا** (run) و **تست** (tests) رو براتون می‌فرستم. فرض کردم محیط لینوکس/یونیکس داری (مثل Ubuntu)، و CUDA 11+، OpenSSL و libsecp256k1 نصب شده. اگر ویندوز داری، از MSYS2 یا WSL استفاده کن.
+
+#### پیش‌نیازها (Prerequisites)
+قبل از شروع، این‌ها رو نصب کن:
+```bash
+# CUDA Toolkit (اگر نصب نیست)
+sudo apt update
+sudo apt install nvidia-cuda-toolkit  # یا از سایت NVIDIA دانلود کن
+
+# OpenSSL
+sudo apt install libssl-dev
+
+# libsecp256k1 (برای hybrid processing)
+sudo apt install libsecp256k1-dev
+
+# CMake و Make
+sudo apt install cmake build-essential
+
+# NVidia drivers (اگر GPU داری)
+sudo apt install nvidia-driver-535  # نسخه مناسب کارتت رو انتخاب کن
+```
+
+پروژه رو در دایرکتوری اصلی (جایی که CMakeLists.txt هست) قرار بده.
+
+---
+
+#### 1. بیلد (Build)
+پروژه با CMake بیلد می‌شه. دو حالت: Release (سریع) یا Debug (برای دیباگ).
+
+**بیلد Release (پیشنهادی برای اجرا):**
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)  # تمام هسته‌ها رو استفاده کن
+```
+
+**بیلد Debug (برای دیباگ و تست):**
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+make -j$(nproc)
+```
+
+**خروجی بیلد:**
+- `bitcoin_miner`: اجرایی اصلی.
+- `test_bitcoin_miner`: اجرایی تست‌ها.
+
+اگر خطا داشتی (مثل CUDA not found)، `export CUDA_HOME=/usr/local/cuda` رو اضافه کن.
+
+**تمیز کردن بیلد (Clean):**
+```bash
+cd build
+make clean
+rm -rf *
+```
+
+---
+
+#### 2. اجرا (Run)
+اجرای اصلی با `./bitcoin_miner`. فایل آدرس‌ها (مثل `addresses.txt`) رو آماده کن – هر خط یک آدرس بیت‌کوین (مثل `1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa`).
+
+**اجرای پایه (با فایل آدرس‌ها پیش‌فرض):**
+```bash
+cd build
+./bitcoin_miner --addresses ../data/addresses.txt
+```
+- این با batch_size=50000، device=0، output=outputs/found_keys.txt اجرا می‌شه.
+
+**ارگومان‌های کامل (Full Options):**
+```bash
+./bitcoin_miner \
+  --addresses <file_path> \          # فایل آدرس‌ها (اجباری، txt با آدرس‌های Base58)
+  --device <id> \                    # ID GPU (پیش‌فرض: 0)
+  --batch <size> \                   # اندازه batch (پیش‌فرض: 50000، max ~1M بسته به GPU)
+  --output <file> \                  # فایل خروجی matches (پیش‌فرض: outputs/found_keys.txt)
+  --help                             # نمایش کمک
+```
+
+**مثال کامل (با batch بزرگ و device 1):**
+```bash
+./bitcoin_miner \
+  --addresses ../data/my_addresses.txt \
+  --device 1 \
+  --batch 100000 \
+  --output ./my_found_keys.txt
+```
+
+**نکته اجرا:**
+- خروجی: گزارش هر 10 ثانیه (hashrate, samples, matches).
+- اگر match پیدا شد، در فایل ذخیره می‌شه و چاپ می‌شه.
+- Ctrl+C برای توقف graceful.
+
+---
+
+#### 3. تست‌ها (Tests)
+تست‌ها با `test_bitcoin_miner` اجرا می‌شن. تمام تست‌ها (address generation, base58, validation, crypto) رو چک می‌کنن.
+
+**اجرای تمام تست‌ها:**
+```bash
+cd build
+./test_bitcoin_miner
+```
+
+**اجرای هدف خاص (از CMake target):**
+```bash
+make run_tests  # تمام تست‌ها رو اجرا می‌کنه
+```
+
+**خروجی تست‌ها:**
+- باید همه ✅ PASS نشون بده (مثل WIF match, address validation).
+- اگر ❌ FAIL دیدی، Debug build کن و log چک کن.
+
+**تست‌های خاص (هر فایل جدا):**
+هر تست فایل رو مستقیم کامپایل و اجرا کن (اگر نیاز داری):
+```bash
+# مثلاً برای test_address_generation
+nvcc -o test_addr src/test/test_address_generation.cu src/crypto/address_generator.cu -lssl -lcrypto
+./test_addr
+```
+
+**تست Bloom Filter (دستی):**
+یک فایل آدرس بساز (`echo "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" > test.txt`) و در main چک کن (bloom add/check).
+
+---
+
+اگر مشکلی داشتی (مثل خطای کامپایل یا GPU detect نشد)، خروجی خطا رو بفرست تا fix کنم. موفق باشی! ⛏️
